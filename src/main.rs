@@ -1,9 +1,8 @@
 use chrono::{DateTime, Local, TimeZone};
 use clap::{Parser, Subcommand};
 use rusqlite::{Connection, Result};
-use std::{fs, io::Write};
+use std::fs;
 
-/// Simple program to greet a person
 #[derive(Parser)]
 struct Cli {
     #[command(subcommand)]
@@ -13,11 +12,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Add a new memo
-    Add,
+    Add { content: String },
     /// List all memos
     List,
     /// Delete a memo
     Delete { id: i32 },
+    /// Find memos
+    Find { keyword: String },
 }
 
 #[derive(Debug)]
@@ -50,9 +51,10 @@ fn main() -> Result<()> {
     )?;
 
     match &cli.command {
-        Some(Commands::Add) => add_memo(&conn),
+        Some(Commands::Add { content }) => add_memo(&conn, content.to_string()),
         Some(Commands::List) => list_memo(&conn),
         Some(Commands::Delete { id }) => delete_memo(&conn, *id),
+        Some(Commands::Find { keyword }) => find_memo(&conn, keyword),
         None => {
             println!("No subcommand was used");
         }
@@ -61,18 +63,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn add_memo(conn: &Connection) {
-    print!("Enter memo: ");
-    std::io::stdout().flush().unwrap();
-
-    let mut content = String::new();
-    std::io::stdin().read_line(&mut content).unwrap();
-    content = content.trim().to_string();
-    if content.is_empty() {
-        println!("Memo is empty");
-        return;
-    }
-
+fn add_memo(conn: &Connection, content: String) {
     let memo = Memo {
         id: 0,
         content,
@@ -89,7 +80,7 @@ fn list_memo(conn: &Connection) {
     let mut stmt = conn
         .prepare("SELECT id, content, created_at FROM memo")
         .unwrap();
-    let person_iter = stmt
+    let memo_iter = stmt
         .query_map([], |row| {
             Ok(Memo {
                 id: row.get(0)?,
@@ -100,14 +91,32 @@ fn list_memo(conn: &Connection) {
             })
         })
         .unwrap();
-    for person in person_iter {
-        if let Ok(person) = person {
-            println!("{}: {}", person.id, person.content);
-        }
+    for memo in memo_iter.flatten() {
+        println!("{}: {}", memo.id, memo.content);
     }
 }
 
 fn delete_memo(conn: &Connection, id: i32) {
     conn.execute("DELETE FROM memo WHERE id = ?1", [id])
         .unwrap();
+}
+
+fn find_memo(conn: &Connection, keyword: &str) {
+    let mut stmt = conn
+        .prepare("SELECT id, content, created_at FROM memo WHERE content LIKE ?1")
+        .unwrap();
+    let memo_iter = stmt
+        .query_map([format!("%{}%", keyword)], |row| {
+            Ok(Memo {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                created_at: Local
+                    .datetime_from_str(&row.get::<_, String>(2)?, "%Y-%m-%dT%H:%M:%S%.f%Z")
+                    .unwrap(),
+            })
+        })
+        .unwrap();
+    for memo in memo_iter.flatten() {
+        println!("{}: {}", memo.id, memo.content);
+    }
 }
