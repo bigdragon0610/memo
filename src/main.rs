@@ -33,13 +33,14 @@ fn main() -> Result<()> {
 
     let home = dirs::home_dir().unwrap();
     let db_path = home.join(".memo/memo.sqlite");
-    let conn = Connection::open(&db_path)?;
 
     if let Some(parent) = db_path.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent).unwrap();
         }
     }
+
+    let conn = Connection::open(&db_path)?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS memo (
